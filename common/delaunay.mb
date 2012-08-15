@@ -1,0 +1,360 @@
+Include "mapbasic.def"
+Include "..\alpha_shapes.def"
+
+Declare Function CircumRadius(ByVal oTriangle As Object) As Float
+Declare Sub PreprocessPoints
+Declare Sub ProcessPoints
+Declare Function NoNodesInTable(ByVal sInTable As String) As Integer
+Dim iCounter, iCurrentPoly, iCurrentNode As Integer
+Dim oProcess As Object
+Dim sSelectionName As String
+
+Sub Delaunay
+	Dim sSourceTable, sOutTable, sSuggestedName, sOutputFolder As String
+		
+	If Not SelectionInfo(SEL_INFO_NROWS) Then
+		' Not working with selection, ask for a table name
+		sSourceTable = ChooseTable("Delaunay Trianges", "Select a source table")
+		If Not sSourceTable Then
+			Exit Sub
+		End If
+		sSuggestedName = sSourceTable + "_delaunay.tab"
+		sSelectionName = ""
+		sOutputFolder = PathToDirectory$(TableInfo(sSourceTable,TAB_INFO_TABFILE ))		
+	Else
+		sSourceTable = SelectionInfo(SEL_INFO_SELNAME)
+		sSelectionName = SelectionInfo(SEL_INFO_TABLENAME)
+		sSuggestedName = sSelectionName + "_delaunay.tab"
+		sOutputFolder = ""
+	End If	
+
+	
+	sOutTable = FileSaveAsDlg(sOutputFolder, sSuggestedName, "TAB", "Save result as")
+	If Not sOutTable Then
+		If sSelectionName Then
+			Select * From sSelectionName
+			Close Table sSourceTable
+		End If
+		Exit Sub
+	End If	
+	
+	Dim lConvertedPoints As Logical
+	Dim sFinalTable As String
+	sFinalTable = CreateDelaunay(sSourceTable, sOutTable, FALSE, lConvertedPoints, FALSE)
+	
+	If sSelectionName Then
+		Close Table sSourceTable
+	End If
+	
+	If sFinalTable Then
+		Add Map Window FrontWindow() Layer sFinalTable
+		Call MessageBox("Delaunay triangles created.", "Delaunay Triangles", vbInformation)
+	Else
+	
+	End If
+	
+	
+End Sub
+
+Function NoNodesInTable(ByVal sInTable As String) As Integer
+	Select SUM(ObjectInfo(obj,OBJ_INFO_NPNTS)) "nodecount" From sInTable Into count_nodes NoSelect
+	Fetch First From count_nodes
+	NoNodesInTable = count_nodes.nodecount
+	Close Table count_nodes
+End Function
+
+
+Function CreateDelaunay(ByVal sInTable As String, ByVal sOutTable As String, ByVal lLeaveSource As Logical, lConvertedPoints As Logical, ByVal lForcePoints As Logical) As String
+	Dim i, j As Integer
+	Dim sSourceTable, sSuggestedName As String
+			
+	sSourceTable = sInTable
+	
+	
+	Print "Preparing"
+	Set ProgressBars Off
+	
+	' Copy original table structure to a new table for convex hull
+	Select * From sSourceTable Where RowID = 0 Into blank_table NoSelect
+	Commit Table blank_table As TEMP_FOLDER + "convex_hull.tab"
+	Commit Table blank_table As TEMP_FOLDER + "convex_hull_buff.tab"
+	Open Table TEMP_FOLDER + "convex_hull.tab" As convex_hull
+	Open Table TEMP_FOLDER + "convex_hull_buff.tab" As convex_hull_buff
+	
+	' Commit selection as a new table
+	Commit Table sSourceTable as TEMP_FOLDER + "source_points.tab"
+	Open Table TEMP_FOLDER + "source_points.tab" As source_points
+	
+	' Convert all nodes to points
+	Print "Converting nodes to point objects"
+	Select * From source_points Where Str$(obj) <> "point" Into to_convert NoSelect
+
+	If TableInfo(to_convert, TAB_INFO_NROWS) Then
+		Dim lNeedToConvert As Logical
+		
+		If Not lForcePoints Then
+			If MsgBox("Selected table has a number of non-point objects. Do you want to include these in the triangle generation?" + Chr$(13) + Chr$(13) + 
+					"If you click Yes, these objects will be broken down into their component nodes prior to construction of the Delaunay triangles.", "Delaunay Triangles", vbYesNo + vbDefaultButton2 + vbQuestion) = vbYes Then
+				lNeedToConvert = TRUE
+			End If
+		Else
+			lNeedToConvert  = TRUE
+		End If
+		If lNeedToConvert Then
+			lConvertedPoints = TRUE
+			
+			Fetch First From to_convert
+			If Not EOT(to_convert) Then
+				oProcess = to_convert.Obj
+			End If
+			Dim oProcess, oNodePoint As Object
+			
+			iCounter = 0
+			iCurrentPoly = 1
+			iCurrentNode = 1
+
+			ProgressBar "Preprocessing points"
+				Calling PreprocessPoints
+				Range NoNodesInTable(to_convert)
+			
+			If Not CommandInfo(CMD_INFO_STATUS) Then
+				Drop Table source_points
+				Drop Table convex_hull_buff
+				Drop Table convex_hull
+				Close Table blank_table
+				If sSelectionName Then
+					Select * From sSelectionName
+					Close Table sSourceTable
+				End If
+				Exit Sub
+			End If
+			
+			Commit Table to_convert
+		End If
+	
+	End If
+	
+	' Add a unique id field
+	Alter Table source_points (Add unique_id Integer)
+	Update source_points Set unique_id = Rowid
+	Commit Table source_points
+	
+	'Close Table Selection
+
+	' Copy original table structure to a new table for voronoi
+	Select * From source_points Where RowID = 0 Into blank_table NoSelect
+	Commit Table blank_table As TEMP_FOLDER + "tri_table.tab"
+	Open Table TEMP_FOLDER + "tri_table.tab" As tri_table
+	
+	' Copy original structure to a new table for links
+	Commit Table blank_table As TEMP_FOLDER + "link_table.tab"
+	Close Table blank_table
+	Open Table TEMP_FOLDER + "link_table.tab" As link_table
+	
+	Print "Calculating Voronoi Regions"
+	' Create triangles
+	If TableInfo("source_points", TAB_INFO_NROWS) < 3 Then
+		Call MessageBox("Delaunay Triangle generation requires at least 3 points in the source table!", "Delaunay Triangles", vbExclamation)
+		Drop Table source_points
+		Drop Table link_table
+		Drop Table tri_table
+		Drop Table convex_hull_buff
+		Drop Table convex_hull
+		Exit Sub
+	End If	
+	Create Object As ConvexHull From source_points Into Table convex_hull
+	Create Object As Buffer From convex_hull Width 10 Units "km" Type Spherical Resolution 12 Into Table convex_hull_buff
+	Drop Table convex_hull
+	Select * From convex_hull_buff
+	Set Target On
+	
+	Select * From source_points Where Str$(obj) = "point" Into source_points_only NoSelect
+	
+	If TableInfo("source_points_only", TAB_INFO_NROWS) < 3 Then
+		Call MessageBox("Delaunay Triangle generation requires at least 3 points in the source table!", "Delaunay Triangles", vbExclamation)
+		Drop Table source_points
+		Drop Table link_table
+		Drop Table tri_table
+		Drop Table convex_hull_buff
+		Exit Sub
+	End If
+	
+	
+	Set ProgressBars On
+	Create Object As Voronoi from source_points_only Into Table tri_table Data unique_id=unique_id
+	Set ProgressBars Off
+	' Convert voronoi to delaunay:
+	' For every voronoi cell there corresponds one seed.
+	' Link two seeds if their cells share a common edge.
+	
+	
+	Dim iCurrentID, iTotalPoints, iMatchingEdges, iDestId As Integer
+	
+	
+	iTotalPoints = TableInfo(tri_table, TAB_INFO_NROWS)
+	Set ProgressBars On
+	iCounter = 0
+	Fetch First From tri_table
+	ProgressBar "Generating delaunay triangles"
+		Calling ProcessPoints
+		Range iTotalPoints
+		
+	If Not CommandInfo(CMD_INFO_STATUS) Then
+		Drop Table match_edges
+		Drop Table source_points
+		Drop Table link_table
+		Drop Table convex_hull_buff
+		Drop Table tri_table
+		
+		If sSelectionName Then
+			Select * From sSelectionName
+			Close Table sSourceTable
+		End If
+		Exit Sub
+	End If
+	
+	Set ProgressBars Off
+	
+	Print "Finalising delaunay triangles and calculating circumradius"
+	' Got all the links, now turn them into triangles
+	Select * From link_table
+	Objects Enclose 
+	
+	Commit Table link_table
+	
+	Select unique_id, CircumRadius(obj) "circumradius" from link_table Where Str$(ObjectInfo(obj, OBJ_INFO_TYPE)) = "7" into delaunay_tmp NoSelect
+	
+	Commit Table delaunay_tmp As sOutTable
+	Close Table delaunay_tmp
+	Open Table sOutTable
+	Update TableInfo(0, TAB_INFO_NAME)  Set unique_id=RowId
+	Commit Table TableInfo(0, TAB_INFO_NAME) 
+	
+	Drop Table link_table
+	Drop Table tri_table
+	If Not lLeaveSource Then
+		Print "Dropping source"
+		Drop Table source_points
+	End If
+	Drop Table convex_hull_buff
+	
+	
+
+	Set ProgressBars On
+	
+	CreateDelaunay = TableInfo(0, TAB_INFO_NAME) 
+End Function
+
+Sub PreprocessPoints
+	Dim oNodePoint As Object
+	Dim i, j As Integer
+	
+	If Not EOT(to_convert) Then
+	
+		If ObjectInfo(oProcess, OBJ_INFO_TYPE) <> OBJ_TYPE_LINE Then
+			If iCurrentNode <= ObjectInfo(oProcess, OBJ_INFO_NPOLYGONS+iCurrentPoly) Then
+				oNodePoint = NodePoint(oProcess, iCurrentPoly, iCurrentNode)
+				Insert Into source_points (obj) Values (oNodePoint)
+				iCounter = iCounter + 1
+				iCurrentNode = iCurrentNode + 1
+			Else
+				If iCurrentPoly < ObjectInfo(oProcess, OBJ_INFO_NPOLYGONS) Then
+					iCurrentPoly = iCurrentPoly + 1
+					iCurrentNode = 1
+				Else
+					' Done with this object / row
+					iCurrentPoly = 1
+					iCurrentNode = 1
+					Fetch Next From to_convert
+					If Not EOT(to_convert) Then
+						oProcess = to_convert.Obj
+					End If
+				End If
+			End If
+
+		Else
+			' line type
+			Insert Into source_points(obj) Values (GetEndOfLine(oProcess))
+			Insert Into source_points(obj) Values (GetStartOfLine(oProcess))
+			iCounter = iCounter + 2
+			Fetch Next From to_convert
+			If Not EOT(to_convert) Then
+				oProcess = to_convert.Obj
+			End If
+			iCurrentPoly = 1
+			iCurrentNode = 1
+		End If
+		
+		ProgressBar = iCounter
+
+	Else
+		ProgressBar = -1
+	End If
+
+End Sub
+
+Sub ProcessPoints
+	Dim oCurrentPoly, oSourcePoint, oDestPoint, oLine As Object
+	Dim iCurrentID, iMatchingEdges, j, iDestId As Integer
+	
+	iCounter = iCounter + 1
+	ProgressBar = iCounter
+	
+	If Not EOT(tri_table) Then
+		oCurrentPoly = tri_table.obj
+		iCurrentID = tri_table.unique_id
+		
+		' Fetch seed
+		Select * From source_points Where unique_id = iCurrentID Into match_source_point NoSelect
+		Fetch First From match_source_point
+		oSourcePoint = match_source_point.obj
+		
+		Select * From tri_table Where obj Intersects oCurrentPoly and unique_id > iCurrentID Into match_edges NoSelect
+		iMatchingEdges = TableInfo(match_edges, TAB_INFO_NROWS)
+		Fetch First From match_edges
+		j = 0
+		Do Until EOT(match_edges)
+			j = j + 1
+			iDestId = match_edges.unique_id
+			
+			Select * From source_points Where unique_id = iDestId Into match_dest_point NoSelect
+			Fetch First From match_dest_point
+			oDestPoint = match_dest_point.obj
+		
+			oLine = CreateLineBetweenPoints(oSourcePoint, oDestPoint)
+			
+			
+			Insert Into link_table (obj) Values (oLine)
+			Fetch Next From match_edges
+		Loop
+	
+		Fetch Next From tri_table
+	
+	Else
+		ProgressBar = -1
+	End If
+	
+End Sub
+
+
+Function CircumRadius(ByVal oTriangle As Object) As Float
+	' Calculate side lengths
+	Dim a, b, c As Float
+	Dim oNodeA, oNodeB, oNodeC As Object
+	
+	oNodeA = CreatePoint(ObjectNodeX(oTriangle, 1, 1), ObjectNodeY(oTriangle, 1, 1))
+	oNodeB = CreatePoint(ObjectNodeX(oTriangle, 1, 2), ObjectNodeY(oTriangle, 1, 2))
+	oNodeC = CreatePoint(ObjectNodeX(oTriangle, 1, 3), ObjectNodeY(oTriangle, 1, 3))
+	
+	a = SphericalObjectDistance(oNodeA, oNodeB, "m")
+	b = SphericalObjectDistance(oNodeA, oNodeC, "m")
+	c = SphericalObjectDistance(oNodeB, oNodeC, "m")
+	
+	' calculate circumradius
+	If (a+b+c)*(b+c-a)*(c+a-b)*(a+b-c) > 0 Then
+		CircumRadius = (a * b * c) / sqr( (a+b+c)*(b+c-a)*(c+a-b)*(a+b-c) )
+	Else
+		CircumRadius = 0
+	End If
+	
+End Function

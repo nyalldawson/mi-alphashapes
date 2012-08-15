@@ -1,0 +1,8 @@
+[LINK]
+Application=alpha_shapes.mbx
+Module=..\alpha_main.mbo
+Module=..\common\message_box.mbo
+Module=..\common\delaunay.mbo
+Module=..\common\mb_functions.mbo
+Module=..\common\alpha_shapes.mbo
+Module=alpha_shapes_105.mbo

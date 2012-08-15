@@ -1,0 +1,122 @@
+Include "mapbasic.def"
+Include "..\alpha_shapes.def"
+
+Declare Sub Preview
+
+Dim fAlpha As Float
+
+Function CreateAlphaShape(ByVal fAlphaDefault As Float) As Logical
+	fAlpha = fAlphaDefault
+	Dim sAlpha As String
+	
+	Dialog
+		Title "Alpha Shapes"
+			
+		Control StaticText
+			Title "Alpha Value"
+			Position 5, 5
+
+		Control EditText
+			ID 3
+			Value DeformatNumber$(Str$(fAlpha))
+			Width 50
+			Position 60, 4 
+			Into sAlpha
+			
+		Control OKButton
+			Position 18, 20 Width 40
+		Control CancelButton
+			Position 62, 20 Width 40
+
+	If CommandInfo(CMD_INFO_DLG_OK) Then
+		CreateAlphaShape = TRUE
+	Else
+		CreateAlphaShape = FALSE
+	End If
+
+	fAlpha = Val(sAlpha)
+	
+	If Not CommandInfo(CMD_INFO_DLG_OK) Then
+		If sSelectionName Then
+			Select * From sSelectionName
+			Close Table sSelectionName
+		End If	
+		CreateAlphaShape = FALSE
+		Call SafeClose("display_points")
+		Drop Table sDelaunayTable
+		Drop Table source_points		
+		Exit Function
+	End If
+	
+	' Actually make the alpha shape (oddly named function to match 10.5+ version)
+	Call Preview
+	
+	Call SafeClose("display_points")
+	Drop Table sDelaunayTable
+	Drop Table source_points
+	
+	' Close and re-open final alpha table to remove all queries
+	Commit Table sAlphaTable
+	Close Table sAlphaTable
+	Open Table sOutTable As sAlphaTable
+		
+	If WindowInfo(iBaseWindowID, WIN_INFO_TYPE) = WIN_MAPPER Then
+		Add Map Window iBaseWindowID Layer sAlphaTable
+		Set Map Window iBaseWindowID Layer 1 Display Global Global Pen (1,2,6291648)   Global Brush (2,15257855,16777215)    
+	End If
+	
+	If sSelectionName Then
+		Close Table sSelectionName
+	End If	
+	
+	CreateAlphaShape = TRUE		
+	
+End Function
+
+
+Sub Preview
+	Set ProgressBars Off
+	If TableExists(sAlphaTable) Then
+		Close Table sAlphaTable
+	End If
+	
+	Select * From sDelaunayTable Where circumradius<=fAlpha Into alpha_shape_query NoSelect
+	
+	' Prepare output table
+	Select * From sDelaunayTable Where RowId = 0 Into sAlphaTable noSelect
+	Commit Table sAlphaTable As sOutTable
+	Close Table sAlphaTable
+	Open Table sOutTable As sAlphaTable
+	
+	Create Object As Merge From alpha_shape_query Into Table sAlphaTable
+	'Drop Table delaunay
+	
+	If lConvertedPoints Then
+		
+		Print "Final processing to make sure lines/regions are totally enclosed by alpha"
+		
+		Insert Into sAlphaTable (unique_id) Select unique_id From source_points
+
+		Select * from sAlphaTable where Str$(obj) <> "point"
+		If SelectionInfo(SEL_INFO_NROWS) > 0 Then
+			Objects Enclose Into Table sAlphaTable Region
+		
+			Select * from sAlphaTable where Str$(obj) <>"point"
+			Objects Combine 
+			
+			Select * From sAlphaTable
+			Objects Disaggregate Into Table sAlphaTable
+		End If
+		
+		
+		Select * From sAlphaTable Where Str$(obj) <> "region" Into to_delete
+		
+		Delete From to_delete
+		Close Table to_delete
+	End If
+	
+	Commit Table sAlphaTable
+	Close Table Selection
+
+	Set ProgressBars On
+End Sub

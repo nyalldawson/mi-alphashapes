@@ -1,0 +1,172 @@
+Include "mapbasic.def"
+Include "..\alpha_shapes.def"
+
+Declare Sub DialogHandler
+Declare Sub Preview
+Declare Sub Reset
+
+Dim iDialogWindowID As Integer
+Dim fAlpha As Float
+
+Function CreateAlphaShape(ByVal fAlphaDefault As Float) As Logical
+	fAlpha = fAlphaDefault
+	
+	Dialog
+		Title "Alpha Shapes"
+		Calling DialogHandler
+		
+		Control DocumentWindow
+			ID 1
+			Position 5,5
+			Height 265
+			Width 450
+			
+		Control StaticText
+			Title "Alpha Value"
+			Position 15, 275
+
+		Control EditText
+			ID 3
+			Value DeformatNumber$(Str$(fAlpha))
+			Width 50
+			Position 60, 273 
+			
+		Control Button
+			Title "Preview"
+			Position 115, 272
+			Calling Preview
+			
+		Control Button
+			Title "Reset"
+			Position 158, 272
+			Calling Reset
+			
+		Control OKButton
+			Position 340, 272 Width 55
+		Control CancelButton
+			Position 400, 272 Width 55
+	
+	Call SafeClose("display_points")
+	Drop Table sDelaunayTable
+	Drop Table source_points
+
+	If Not CommandInfo(CMD_INFO_DLG_OK) Then
+		Drop Table sAlphaTable	
+		If sSelectionName Then
+			Select * From sSelectionName
+			Close Table sSelectionName
+		End If	
+		CreateAlphaShape = FALSE		
+		Exit Function
+	End If
+	
+	' Close and re-open final alpha table to remove all queries
+	Commit Table sAlphaTable
+	Close Table sAlphaTable
+	Open Table sOutTable As sAlphaTable
+		
+	If WindowInfo(iBaseWindowID, WIN_INFO_TYPE) = WIN_MAPPER Then
+		Add Map Window iBaseWindowID Layer sAlphaTable
+		Set Window iBaseWindowID Enhanced On
+		Set Map Window iBaseWindowID Layer 1  Alpha 91 Display Global Global Pen (1,2,6291648)   Global Brush (2,15257855,16777215)    
+	End If
+	
+	If sSelectionName Then
+		Close Table sSelectionName
+	End If	
+	
+	CreateAlphaShape = TRUE	
+	
+End Function
+
+' Sets up interactive map window
+Sub DialogHandler
+	Dim iHwnd, iNoLayers, i As Integer
+	
+	' Clone Map
+	iHwnd = ReadControlValue(1)
+	Set Next Document Parent iHwnd Style WIN_STYLE_CHILD
+	
+	Run Command WindowInfo(iBaseWindowID, WIN_INFO_CLONEWINDOW)
+	iDialogWindowID = WindowID(frontwindow())
+
+	' Add selection layer
+	If lConvertedPoints Then
+		Add Map Window iDialogWindowID Layer sOriginalSelection
+	Else
+		Select * From sOriginalSelection Where Str$(obj) = "point" Into display_points NoSelect
+		Add Map Window iDialogWindowID Layer display_points
+	End If
+	Set Map Window iDialogWindowID Layer 1 Display Global Global Symbol (58,0,12,"MapInfo Cartographic",0,0)  
+
+	
+	' Remove any other layers
+	iNoLayers = MapperInfo(FrontWindow(), MAPPER_INFO_LAYERS)
+	' NOTE - We actually go backwards through the list, so that layers aren't moving around As we remove them
+	For i = iNoLayers To 2 Step - 1
+	'	Remove Map Layer (i)
+	Next
+	
+	Set Map Window iDialogWindowID Zoom Entire Layer 1
+	Call Preview
+	
+End Sub
+
+Sub Preview
+	Set ProgressBars Off
+	fAlpha = ReadControlValue(3)
+	If TableExists(sAlphaTable) Then
+		Close Table sAlphaTable
+	End If
+	
+	Select * From sDelaunayTable Where circumradius<=fAlpha Into alpha_shape_query NoSelect
+	
+	' Prepare output table
+	Select * From sDelaunayTable Where RowId = 0 Into sAlphaTable noSelect
+	Commit Table sAlphaTable As sOutTable
+	Close Table sAlphaTable
+	Open Table sOutTable As sAlphaTable
+	
+	Create Object As Merge From alpha_shape_query Into Table sAlphaTable
+	'Drop Table delaunay
+	
+	If lConvertedPoints Then
+		
+		Print "Final processing to make sure lines/regions are totally enclosed by alpha"
+		
+		Insert Into sAlphaTable (unique_id) Select unique_id From source_points
+
+		Select * from sAlphaTable where Str$(obj) <> "point"
+		If SelectionInfo(SEL_INFO_NROWS) > 0 Then
+			Objects Enclose Into Table sAlphaTable Region
+		
+			Select * from sAlphaTable where Str$(obj) <>"point"
+			Objects Combine 
+			
+			Select * From sAlphaTable
+			Objects Disaggregate Into Table sAlphaTable
+		End If
+		
+		
+		Select * From sAlphaTable Where Str$(obj) <> "region" Into to_delete
+		
+		Delete From to_delete
+		Close Table to_delete
+	End If
+	
+	Commit Table sAlphaTable
+	Close Table Selection
+	
+	If WindowInfo(FrontWindow(), WIN_INFO_TYPE) = WIN_MAPPER Then
+		Add Map Window FrontWindow() Layer sAlphaTable
+		Set Window FrontWindow() Enhanced On
+		Set Map Window FrontWindow() Layer 1  Alpha 91 Display Global Global Pen (1,2,6291648)   Global Brush (2,15257855,16777215)    
+	End If
+
+	Set ProgressBars On
+End Sub
+
+Sub Reset
+	Alter Control 3 Value DeformatNumber$(Str$(fAlphaDefault))
+	Call Preview()
+End Sub

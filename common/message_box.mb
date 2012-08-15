@@ -1,0 +1,17 @@
+Include "message_box.def"
+Include "mapbasic.def"
+
+'**************************************************************************
+' Wrapper for standard Win32 Msgbox function
+'**************************************************************************
+Function MsgBox(ByVal sTxt As String, ByVal sCaption As String, ByVal iType As Integer) As Integer
+	MsgBox = MsgBoxA(WindowInfo(WIN_MAPINFO, WIN_INFO_WND), sTxt, sCaption, iType)
+End Function
+
+'**************************************************************************
+' Messagebox which doesn't return a value
+'**************************************************************************
+Sub MessageBox(ByVal sTxt As String, ByVal sCaption As String, ByVal iType As Integer)
+	Dim i As Integer
+	i = MsgBoxA(WindowInfo(WIN_MAPINFO, WIN_INFO_WND), sTxt, sCaption, iType)
+End Sub

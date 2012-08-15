@@ -1,0 +1,18 @@
+Include "common\message_box.def"
+Include "common\mb_functions.def"
+
+Declare Sub Main
+
+Declare Function CreateDelaunay(ByVal sInTable As String, ByVal sOutTable As String, ByVal lLeaveSource As Logical, lConvertedPoints As Logical, ByVal lForcePoints As Logical) As String
+Declare Sub Delaunay
+Declare Function CreateAlphaShape(ByVal fAlphaDefault As Float) As Logical
+Declare Sub AlphaShapes
+
+Global TEMP_FOLDER As String
+Global lConvertedPoints As Logical
+Global sOriginalSelection As String
+Global iBaseWindowID As Integer
+Global sAlphaTable As String
+Global sDelaunayTable As String
+Global sOutTable As String
+Global sSelectionName As String

@@ -1,0 +1,35 @@
+Include "mapbasic.def"
+Include "menu.def"
+Include "alpha_shapes.def"
+
+Declare Sub CloseAlphaShapes()
+Declare Sub About
+DEFINE PROGRAM_VERSION "1.0.1"
+
+'**************************************************************************
+'**************************************************************************
+
+Sub Main
+	TEMP_FOLDER = ApplicationDirectory$()
+
+	Create Menu "Alpha Shapes" As
+		"Delaunay Triangles" Calling Delaunay,
+		"Alpha Shapes" Calling AlphaShapes,
+		"(-",
+		"About Alpha Shapes" Calling About,
+		"(-",
+		"Exit Alpha Shapes" Calling CloseAlphaShapes
+	
+	Alter Menu Bar Add "Alpha Shapes"
+	
+End Sub
+
+Sub CloseAlphaShapes()
+	End Program
+End Sub
+
+Sub About
+	Call MessageBox("MI AlphaShapes by Nyall Dawson (http://nyalldawson.net)"+Chr$(13)+Chr$(13)+"Build Version " + PROGRAM_VERSION, "About Alpha Shapes", vbInformation)
+End Sub
+
+

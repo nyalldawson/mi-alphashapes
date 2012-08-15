@@ -1,0 +1,79 @@
+Include "mapbasic.def"
+Include "..\alpha_shapes.def"
+
+Sub AlphaShapes
+	Dim sSourceTable, sSuggestedName, sDelaunayFile, sOutputFolder As String
+	Dim fAlpha As Float
+	
+	iBaseWindowID = FrontWindow()		
+	
+	If Not SelectionInfo(SEL_INFO_NROWS) Then
+		' Not working with selection, ask for a table name
+		sSourceTable = ChooseTable("Create Alpha Shapes", "Select a source table:")
+		If Not sSourceTable Then
+			Exit Sub
+		End If
+		sOriginalSelection = sSourceTable
+		sSelectionName = ""
+		sSuggestedName = sSourceTable + "_alpha.tab"
+		sDelaunayFile = sSourceTable + "_delaunay_tmp.tab"
+		sOutputFolder = PathToDirectory$(TableInfo(sSourceTable,TAB_INFO_TABFILE ))
+	Else
+		sSourceTable = SelectionInfo(SEL_INFO_SELNAME)
+		sOriginalSelection = sSourceTable
+		sSelectionName = SelectionInfo(SEL_INFO_SELNAME)
+		sSuggestedName = SelectionInfo(SEL_INFO_TABLENAME)+ "_alpha.tab"
+		sDelaunayFile = "delaunay_tmp.tab" 
+		sOutputFolder = ""
+	End If	
+
+	sOutTable = FileSaveAsDlg(sOutputFolder, sSuggestedName, "TAB", "Save result as")
+	If Not sOutTable Then
+		If sSelectionName Then
+			Select * From sSelectionName
+			Close Table sSelectionName
+		End If
+		Exit Sub
+	End If	
+	
+	sAlphaTable = PathToTableName$(sOutTable)
+	
+	sDelaunayTable = CreateDelaunay(sSourceTable, sDelaunayFile, TRUE, lConvertedPoints, FALSE)
+	
+	If Not sDelaunayTable Then
+		' Something went wrong
+		If sSelectionName Then
+			Select * From sSelectionName
+			Close Table sSelectionName
+		End If
+		Exit Sub
+		
+	End If
+	
+	Dim i, j As Integer
+	
+	Print "Calculating alpha value"
+	' Calculate alpha value
+
+	Dim oCurrentPoint As Object 
+	Fetch First From source_points
+	
+	Do Until EOT(source_points)
+		oCurrentPoint = Buffer(source_points.obj, 12, 5, "m")
+		
+		Select min(circumradius) "min_radius" From sDelaunayTable Where obj intersects oCurrentPoint Into match_triangles NoSelect
+		Fetch First From match_triangles
+		fAlpha = Maximum(match_triangles.min_radius, fAlpha)
+	
+		Fetch Next From source_points
+	Loop
+
+	print "Alpha value " + fAlpha
+
+	Dim lResult As Logical
+	' Now, call another routine which is Mapinfo 8.5+/10.5+ specific, depending on the project file used
+	lResult = CreateAlphaShape(fAlpha)	
+	
+	Set ProgressBars On
+
+End Sub

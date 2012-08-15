@@ -1,0 +1,11 @@
+'**************************************************************************
+' Functions included in mb_functions.mb
+'**************************************************************************
+Declare Function Trim$(ByVal sTrim As String) As String
+Declare Function ChooseTable(ByVal sDialogTitle As String, ByVal sDialogText As String) As String
+Declare Function GetEndOfLine(ByVal oLine As Object) As Object
+Declare Function GetStartOfLine(ByVal oLine As Object) As Object
+Declare Function CreateLineBetweenPoints(ByVal oPoint1 As Object, ByVal oPoint2 As Object) As Object
+Declare Function NodePoint(ByVal oObject As Object, ByVal iPolyNo As Integer, ByVal iNodeNo As Integer) As Object
+Declare Function TableExists(ByVal sTable As String) As Logical
+Declare Sub SafeClose(ByVal sTableName As String)

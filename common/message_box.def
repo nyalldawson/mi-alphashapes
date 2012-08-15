@@ -1,0 +1,26 @@
+Declare Function MsgBoxA Lib "User32.dll" Alias "MessageBoxA" (ByVal hWnd As Integer, ByVal sTxt As String, ByVal sCaption As String, ByVal iTyp As Integer) As Integer
+Declare Function MsgBox(ByVal sTxt As String, ByVal sCaption As String, ByVal iType As Integer) As Integer
+Declare Sub MessageBox(ByVal sTxt As String, ByVal sCaption As String, ByVal iType As Integer)
+
+DEFINE vbOKOnly 0
+DEFINE vbOKCancel 1
+DEFINE vbAbortRetryIgnore 2
+DEFINE vbYesNoCancel 3
+DEFINE vbYesNo 4
+DEFINE vbRetryCancel 5
+DEFINE vbCritical 16	
+DEFINE vbQuestion 32
+DEFINE vbExclamation 48	
+DEFINE vbInformation 64	
+DEFINE vbDefaultButton1	0	
+DEFINE vbDefaultButton2 256
+DEFINE vbDefaultButton3 512	
+DEFINE vbDefaultButton4 768
+
+DEFINE vbOK 1
+DEFINE vbCancel	2
+DEFINE vbAbort 3
+DEFINE vbRetry 4
+DEFINE vbIgnore 5
+DEFINE vbYes 6
+DEFINE vbNo 7 
