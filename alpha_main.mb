@@ -10,7 +10,7 @@ DEFINE PROGRAM_VERSION "1.0.1"
 '**************************************************************************
 
 Sub Main
-	TEMP_FOLDER = ApplicationDirectory$()
+	TEMP_FOLDER = GetFolderPath$(46)
 
 	Create Menu "Alpha Shapes" As
 		"Delaunay Triangles" Calling Delaunay,
